@@ -1,0 +1,122 @@
+---
+title: "Machine Learning Prediction Assignment"
+author: "Jochen Schmiedbauer"
+date: "Sunday, March 22nd , 2015"
+output: html_document
+---
+
+#Coursera: Machine Learning Prediction Assignment
+
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+Data 
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+##Loading data and libraries
+
+As per the course, I have made us of the caret and randomForest packages, as well as the Hmisc for the data analyis and the foreeach & doParallel packages for the parallell processing.
+I have also set the seed value to make it reproducable. The assumption here is that the packages are already installed. 
+
+###load libraries
+```{r, echo=FALSE}
+options(warn=-1)
+library(caret)
+library(randomForest)
+library(Hmisc)
+library(foreach)
+library(doParallel)
+set.seed(4536)
+```
+
+###Loading data
+
+I set the relevant working directory on my RStudio session.
+As the data contain a "DIV/0!" string, this will be replaced with an NA value.
+
+```{r, echo=TRUE}
+setwd("D:/02.Personal/Education/Coursera/20150307 Practical Machine Learning/Project")
+Training_set <- read.csv("pml-training.csv", na.strings=c("#DIV/0!") )
+Test_set <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!") )
+```
+
+
+as there seems to be a lot of missing data in certain columns we need to focus on the columns that have no NA values (therefore assuming they are more proper predictors).
+
+This means the belt, arm,dumbbell, and forearm columns.
+
+###only select Valid columns as predictors
+
+```{r, echo=TRUE}
+for(i in c(8:ncol(Training_set)-1)) {Training_set[,i] = as.numeric(as.character(Training_set[,i]))} ## convert to numeric
+for(i in c(8:ncol(Test_set)-1)) {Test_set[,i] = as.numeric(as.character(Test_set[,i]))} ## convert to numeric
+
+NA_miss <- colnames(Training_set[colSums(is.na(Training_set)) == 0])[-(1:7)]
+Predictor_set <- Training_set[NA_miss]
+```
+
+the model
+
+```{r, echo=TRUE}
+Train_60_set <- createDataPartition(y=Predictor_set$classe, p=0.6, list=FALSE )
+Training_60 <- Predictor_set[Train_60_set,]
+Testing <- Predictor_set[-Train_60_set,]
+```
+
+
+###Creation of the random forests usng parallell processing.
+
+```{r, echo=TRUE}
+registerDoParallel()
+Train_model <- Training_60 [-ncol(Training_60 )]
+Train_model_classe <- Training_60$classe
+
+Randomforest_outcome <- foreach(ntree=rep(200, 7), .combine=randomForest::combine, .packages='randomForest') %dopar%
+    {
+randomForest(Train_model, Train_model_classe, ntree=ntree) 
+    }
+```
+
+
+
+### Evaluate Training set 
+
+
+```{r, echo=TRUE}
+Training_predictor <- predict(Randomforest_outcome, newdata=Training_60)
+confusionMatrix(Training_predictor,Training_60$classe)
+```
+
+as the estimated error rate is less than 1% it is a good time to test this model on the test data (of the training set)
+
+### Evaluate Test set 
+
+```{r, echo=TRUE}
+Test_predictor <- predict(Randomforest_outcome, newdata=Testing)
+confusionMatrix(Test_predictor,Testing$classe)
+```
+
+
+## Submission 
+
+```{r, echo=TRUE}
+answers = rep("A", 20)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
